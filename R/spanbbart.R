@@ -1,10 +1,4 @@
-# Program Name: spanbbart.R
-# Author:       Jacob Englert
-# Date:         31 October 2023
-# Purpose:      Fit a Bayesian negative binomial regression with spatial random
-#               effects under a proper CAR prior and nonparametric relative risk
-#               mean function under a BART prior (using dbarts)
-
+#' @export
 spanbbart <- function(x1, x2, y,
                       s = 1:length(y), t = rep(1, length(y)), # Data should be ordered by space then time
                       offset = numeric(length(y)), geo, seed = 2187,

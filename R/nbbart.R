@@ -1,3 +1,4 @@
+#' @export
 nbbart <- function(x, y, offset = rep.int(0, length(y)),
                    m = 200, k = 2, base = 0.95, power = 2, s_xi = 0.1,
                    num_iter = 5000, num_burn = 2500, num_thin = 5,
