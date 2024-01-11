@@ -1,6 +1,41 @@
 
+#' Accumulated Local Effects for a Bayesian Posterior
+#'
+#' @description
+#' This function provides pointwise first- and second-order ALE with uncertainty
+#' intervals using the posterior samples of predictions from a Bayesian model. The
+#' function currently only supports computing ALEs for numeric predictors.
+#'
+#'
+#' @param X The data frame of predictor variables to which the model was fit.
+#' @param model The fitted Bayesian model object from which predictions can be made.
+#' @param pred_fun A user-supplied function that will be used to predict the response
+#' for \code{model} for some specified input. \code{pred_fun} has two arguments. The first argument
+#' is named \code{model} and the second argument is named \code{newdata}. The output of \code{pred_fun}
+#' when applied to \code{model} and \code{X} must be a numeric matrix \code{nrow(X)} rows and number of
+#' columns equal to the number of posterior samples drawn (this is the main difference
+#' between this function and \code{ALEPlot} from the \href{https://cran.r-project.org/web//packages//ALEPlot/ALEPlot.pdf}{\code{ALEPlot}} package).
+#' @param J same as in \href{https://cran.r-project.org/web//packages//ALEPlot/ALEPlot.pdf}{\code{ALEPlot}}.
+#' @param K same as in \href{https://cran.r-project.org/web//packages//ALEPlot/ALEPlot.pdf}{\code{ALEPlot}}.
+#' @param CrI a numeric vector of length two indicating the pointwise quantiles
+#' to return in addition to the point estimate.
+#' @param f_true an optional function which maps \code{X} to its true predicted value
+#' (useful for comparing results in a simulation study).
+#'
+#'
+#' @details
+#' See the Apley (2020) reference below for a background on ALE.
+#'
+#' @references
+#' Daniel W. Apley, Jingyu Zhu, Visualizing the Effects of Predictor Variables in
+#' Black Box Supervised Learning Models, Journal of the Royal Statistical Society
+#' Series B: Statistical Methodology, Volume 82, Issue 4, September 2020, Pages
+#' 1059–1086, \url{https://doi.org/10.1111/rssb.12377}
+#'
 #' @export
-mcmc_ale <- function(X, model, pred_fun, J, K = 40, CrI = c(0.025, 0.975), f_true = NULL){
+#'
+mcmc_ale <- function(X, model, pred_fun, J, K = 40,
+                     CrI = c(0.025, 0.975), f_true = NULL){
 
   N <- dim(X)[1]
   d <- dim(X)[2]
