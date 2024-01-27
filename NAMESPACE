@@ -2,4 +2,5 @@
 
 export(mcmc_ale)
 export(nbbart)
+export(soft_spanbbart)
 export(spanbbart)
