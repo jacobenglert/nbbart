@@ -52,13 +52,13 @@ mcmc_ale <- function (X, model, pred_fun, J, K = 40,
     stopifnot("mcmc_ale currently only works with numeric variables" = class(X[, J[1]]) %in% c("numeric", "integer"))
 
     fJ <- get_ale_post_1D(X, model, pred_fun, J, K, center)
+    x <- fJ$x
     fJ.post   <- fJ$ale
     fJ.mean   <- rowMeans(fJ.post)
     fJ.lower  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[1]))
     fJ.upper  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[2]))
     if (!is.null(f_true)) fJ.true <- get_ale_true_1D(X, f_true, J, K, center)
     else fJ.true <- rep(NA, length(x))
-    x <- fJ$x
 
     # Return as nice data frame
     out <- data.frame(k = 1:length(x),
