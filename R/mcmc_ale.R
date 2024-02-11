@@ -56,13 +56,13 @@ mcmc_ale <- function (X, model, pred_fun, J, K = 40,
     fJ.mean   <- rowMeans(fJ.post)
     fJ.lower  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[1]))
     fJ.upper  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[2]))
-    if (!is.null(f_true)) fJ.true   <- get_ale_true_1D(X, f_true, J, K, center)
-    else fJ.true <- NULL
+    if (!is.null(f_true)) fJ.true <- get_ale_true_1D(X, f_true, J, K, center)
+    else fJ.true <- rep(NA, length(x))
     x <- fJ$x
 
     # Return as nice data frame
     out <- data.frame(k = 1:length(x),
-                      var = colnames(X)[J],
+                      var = rep(colnames(X)[J], length(x)),
                       x = x,
                       est = fJ.mean,
                       lcl = fJ.lower,
