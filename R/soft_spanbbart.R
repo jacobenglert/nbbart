@@ -5,7 +5,7 @@ soft_spanbbart <- function(x1, x2, y,
                       m = 200, k = 2, base = 0.95, power = 2,
                       num_iter = 5000, num_burn = 2500, num_thin = 5,
                       light_store = TRUE,
-                      b = rep(0, ncol(x1)), B = diag(ncol(x1)) * 1e4, # Fixed effect hyperparameters
+                      sparse = TRUE, soft = TRUE,
                       c = 0.1, d = 0.1, # spatial random effect marginal variance (tau2) prior hyperparameters
                       s_xi = 0.1 # proposal distribution variance for xi (only used if xi_update_method = 'MH')
 ){
@@ -48,23 +48,34 @@ soft_spanbbart <- function(x1, x2, y,
   rho_ll0   <- sapply(rho_vals, \(x) 0.5 * sum(log(1 - x * lambda)), simplify = TRUE)
 
   # Pre-calculate fixed effect precision matrix
-  B_inv <- B; diag(B_inv) <- 1 / diag(B)
+  b <- rep(0, ncol(x1))
+  B <- diag(ncol(x1)) * 1e4
+  B_inv <- B
+  diag(B_inv) <- 1 / diag(B)
 
   # Generate an example auxillary outcome to initialize sampler with
   omega <- pg::rpg_hybrid(y + xi, eta)[,1]
   z <- (y - xi) / (2 * omega)
   r <- z - offset - fixeff - ranef
   split.probs <- rep(1 / ncol(x2), ncol(x2))
-  #norm_x2 <- SoftBart::quantile_normalize_bart(x2)
-  forest <- SoftBart::MakeForest(SoftBart::Hypers(x2, r, weights = omega, sigma_hat = 1,
-                                                  num_tree = m, beta = power, gamma = base, k = k),
-                                 SoftBart::Opts(update_sigma = FALSE,
-                                                update_tau = TRUE,
-                                                num_burn = num_burn,
-                                                #num_thin = num_thin,
-                                                num_save = (num_iter - num_burn),
-                                                num_print = 1000),
-                                 warn = FALSE)
+
+  bart_hypers <- SoftBart::Hypers(x2, r, weights = omega, sigma_hat = 1,
+                                  num_tree = m, beta = power, gamma = base, k = k)
+  bart_opts <- SoftBart::Opts(update_sigma = FALSE,
+                              num_burn = num_burn,
+                              num_save = num_iter - num_burn,
+                              num_print = 1000)
+  if (!sparse) {
+    bart_opts$update_s <- FALSE
+    bart_opts$update_alpha <- FALSE
+  }
+
+  if (!soft) {
+    bart_hypers$width <- 1e-4
+    bart_opts$update_tau <- FALSE
+  }
+
+  forest <- SoftBart::MakeForest(bart_hypers, bart_opts, warn = FALSE)
 
   # Allocate posterior storage
   K <- (num_iter - num_burn) / num_thin
