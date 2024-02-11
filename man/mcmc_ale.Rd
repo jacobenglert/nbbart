@@ -4,7 +4,17 @@
 \alias{mcmc_ale}
 \title{Accumulated Local Effects for a Bayesian Posterior}
 \usage{
-mcmc_ale(X, model, pred_fun, J, K = 40, CrI = c(0.025, 0.975), f_true = NULL)
+mcmc_ale(
+  X,
+  model,
+  pred_fun,
+  J,
+  K = 40,
+  CrI = c(0.025, 0.975),
+  f_true = NULL,
+  include_main_effects = TRUE,
+  center = "avg_pred"
+)
 }
 \arguments{
 \item{X}{The data frame of predictor variables to which the model was fit.}
@@ -27,6 +37,14 @@ to return in addition to the point estimate.}
 
 \item{f_true}{an optional function which maps \code{X} to its true predicted value
 (useful for comparing results in a simulation study).}
+
+\item{include_main_effects}{logical determining whether the centered main effect
+ALEs should be added back to the second-order ALE (has no effect when \code{dim(J) = 1})}
+
+\item{center}{centring method to be used. Must be one of 'avg_pred' or 'median'.
+By default, ALE is centered with respect to the predictor value(s) that corresponds
+to the average (mean) ALE prediction. Setting to 'median' will have the effect
+of centering the ALE about the ALE prediction for the median predictor value(s).}
 }
 \description{
 This function provides pointwise first- and second-order ALE with uncertainty

@@ -21,7 +21,12 @@
 #' to return in addition to the point estimate.
 #' @param f_true an optional function which maps \code{X} to its true predicted value
 #' (useful for comparing results in a simulation study).
-#'
+#' @param include_main_effects logical determining whether the centered main effect
+#' ALEs should be added back to the second-order ALE (has no effect when \code{dim(J) = 1})
+#' @param center centring method to be used. Must be one of 'avg_pred' or 'median'.
+#' By default, ALE is centered with respect to the predictor value(s) that corresponds
+#' to the average (mean) ALE prediction. Setting to 'median' will have the effect
+#' of centering the ALE about the ALE prediction for the median predictor value(s).
 #'
 #' @details
 #' See the Apley (2020) reference below for a background on ALE.
@@ -34,9 +39,11 @@
 #'
 #' @export
 #'
-mcmc_ale <- function(X, model, pred_fun, J, K = 40,
-                     CrI = c(0.025, 0.975), f_true = NULL){
+mcmc_ale <- function (X, model, pred_fun, J, K = 40,
+                      CrI = c(0.025, 0.975), f_true = NULL, include_main_effects = TRUE,
+                      center = 'avg_pred') {
 
+  # Get dimensions of data
   N <- dim(X)[1]
   d <- dim(X)[2]
 
@@ -44,54 +51,24 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
 
     stopifnot("mcmc_ale currently only works with numeric variables" = class(X[, J[1]]) %in% c("numeric", "integer"))
 
-    # Process input into intervals
-    z <- c(min(X[, J]), as.numeric(stats::quantile(X[, J], seq(1 / K, 1, length.out = K), type = 1)))
-    z <- unique(z)
-    K <- length(z) - 1
-    a1 <- as.numeric(cut(X[, J], breaks = z, include.lowest = TRUE))
+    fJ <- get_ale_post_1D(X, model, pred_fun, J, K, center)
+    fJ.post   <- fJ$ale
+    fJ.mean   <- rowMeans(fJ.post)
+    fJ.lower  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[1]))
+    fJ.upper  <- apply(fJ.post, 1, \(x) stats::quantile(x, CrI[2]))
+    if (!is.null(f_true)) fJ.true   <- get_ale_true_1D(X, f_true, J, K, center)
+    else fJ.true <- NULL
+    x <- fJ$x
 
-    # Create counterfactual datasets
-    X1 <- X2 <- X
-    X1[, J] <- z[a1]
-    X2[, J] <- z[a1 + 1]
-
-    # Make predictions
-    y.hat1.mat <- pred_fun(model = model, newdata = X1)
-    y.hat2.mat <- pred_fun(model = model, newdata = X2)
-
-    # Compute local effects
-    Delta.mat <- y.hat2.mat - y.hat1.mat
-    Delta.mat <- apply(Delta.mat, 2, \(x) tapply(x, a1, mean))
-
-    # Accumulate local effects
-    fJ.mat <- apply(Delta.mat, 2, \(x) c(0, cumsum(x)))
-
-    # Center ALE
-    b1 <- as.numeric(table(a1))
-    fJ.mat.cen <- sweep(fJ.mat, 2, apply(fJ.mat, 2, \(x) sum((x[1:K] + x[2:(K + 1)]) / 2 * b1) / sum(b1)), '-')
-
-    # Format output
-    x <- z
-    fJ.mean <- rowMeans(fJ.mat.cen)
-    fJ.lower <- apply(fJ.mat.cen, 1, \(x) stats::quantile(x, CrI[1]))
-    fJ.upper <- apply(fJ.mat.cen, 1, \(x) stats::quantile(x, CrI[2]))
-
-    if(!is.null(f_true)){
-      # Make predictions
-      y.hat1.true <- f_true(X1)
-      y.hat2.true <- f_true(X2)
-
-      # Compute local effects
-      Delta.true <- y.hat2.true - y.hat1.true
-      Delta.true <- tapply(Delta.true, a1, mean)
-
-      # Accumulate local effects
-      fJ.true <- c(0, cumsum(Delta.true))
-
-      # Center ALE
-      fJ.true <- fJ.true - sum((fJ.true[1:K] + fJ.true[2:(K + 1)])/2 * b1) / sum(b1)
-
-    } else fJ.true <- NULL
+    # Return as nice data frame
+    out <- data.frame(k = 1:length(x),
+                      var = colnames(X)[J],
+                      x = x,
+                      est = fJ.mean,
+                      lcl = fJ.lower,
+                      ucl = fJ.upper,
+                      truth = fJ.true)
+    return(out)
 
 
   } else if(length(J) == 2) {
@@ -128,9 +105,9 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
 
     # For non-existent regions, use nearest neighbor
     NA.Delta <- is.na(Delta.mat.list[[1]])
-    NA.ind <- which(NA.Delta, arr.ind = T, useNames = F)
+    NA.ind <- which(NA.Delta, arr.ind = TRUE, useNames = FALSE)
     if(nrow(NA.ind) > 0){
-      notNA.ind <- which(!NA.Delta, arr.ind = T, useNames = F)
+      notNA.ind <- which(!NA.Delta, arr.ind = TRUE, useNames = FALSE)
       range1 <- max(z1) - min(z1)
       range2 <- max(z2) - min(z2)
         Z.NA <- cbind((z1[NA.ind[, 1]] + z1[NA.ind[, 1] + 1]) / 2 / range1,
@@ -154,6 +131,7 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
     b <- as.matrix(table(a1, a2))
     b1 <- apply(b, 1, sum)
     b2 <- apply(b, 2, sum)
+
     Delta <- lapply(fJ, \(x) x[2:(K1 + 1), ] - x[1:K1, ])
     b.Delta <- lapply(Delta, \(x) b * (x[, 1:K2] + x[, 2:(K2 + 1)]) / 2)
     Delta.Ave <- lapply(b.Delta, \(x) apply(x, 1, sum) / b1)
@@ -164,29 +142,39 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
     fJ2 <- lapply(Delta.Ave, \(x) c(0, cumsum(x)))
     fJ <- mapply(\(x, y, z) x - outer(y, rep(1, K2 + 1)) - outer(rep(1, K1 + 1), z),
                  x = fJ, y = fJ1, z = fJ2, SIMPLIFY = FALSE)
-    fJ <- lapply(fJ, \(x) x - sum(b * (x[1:K1, 1:K2] + x[1:K1, 2:(K2 + 1)] + x[2:(K1 + 1), 1:K2] + x[2:(K1 + 1), 2:(K2 + 1)]) / 4) / sum(b))
 
-    # Format output
-    x <- list(z1, z2)
-    K <- c(K1, K2)
 
-    fJ.array <- array(unlist(fJ), dim = c(dim(fJ[[1]]), length(fJ)))
-    fJ.mean <- apply(fJ.array, c(1, 2), mean)
-    fJ.lower <- apply(fJ.array, c(1, 2), \(x) stats::quantile(x, CrI[1]))
-    fJ.upper <- apply(fJ.array, c(1, 2), \(x) stats::quantile(x, CrI[2]))
+    if (center == 'avg_pred') {
+      fJ <- lapply(fJ, \(x) x - sum(b * (x[1:K1, 1:K2] + x[1:K1, 2:(K2 + 1)] + x[2:(K1 + 1), 1:K2] + x[2:(K1 + 1), 2:(K2 + 1)]) / 4) / sum(b))
+    }
+    else if (center == 'median') {
+      M1 <- max(which(stats::median(X[, J[1]]) > z1))
+      M2 <- max(which(stats::median(X[, J[2]]) > z2))
+      fJ <- lapply(fJ, \(x) x - ((x[M1,M2] + x[M1,M2+1] + x[M1+1,M2] + x[M1+1,M2+1]) / 4))
+    }
 
-    # contour(x[[1]], x[[2]], fJ, add = TRUE, drawlabels = TRUE)
-    # if (NA.plot == FALSE) {
-    #   if (nrow(NA.ind) > 0) {
-    #     rect(xleft = z1[NA.ind[, 1]],
-    #          ybottom = z2[NA.ind[,2]],
-    #          xright = z1[NA.ind[, 1] + 1],
-    #          ytop = z2[NA.ind[,2] + 1],
-    #          col = "black")
-    #   }
-    # }
+    # If main effects requested, add back the marginally centered main effects
+    if (include_main_effects) {
 
-    if(!is.null(f_true)){
+      # Compute centered ALE main effects
+      ale1 <- get_ale_post_1D(X, model, pred_fun, J[1], K, center)$ale
+      ale2 <- get_ale_post_1D(X, model, pred_fun, J[2], K, center)$ale
+
+      # Convert to list format
+      fJ1 <- fJ2 <- vector("list", ncol(ale1))
+      for (i in 1:ncol(ale1)) {
+        fJ1[[i]] <- ale1[,i]
+        fJ2[[i]] <- ale2[,i]
+      }
+
+      # Add ALE main effects back to the centered second-order predictions
+      fJ <- mapply(\(x, y, z) x + outer(y, rep(1, K2 + 1)) + outer(rep(1, K1 + 1), z),
+                   x = fJ, y = fJ1, z = fJ2, SIMPLIFY = FALSE)
+    }
+
+    # Return true ALE function if true function is provided
+    if (!is.null(f_true)) {
+
       # Make predictions
       y.hat11.true <- f_true(X11)
       y.hat12.true <- f_true(X12)
@@ -199,9 +187,13 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
       if (nrow(NA.ind) > 0) {
         Delta.true[NA.ind] <- Delta.true[matrix(notNA.ind[nbrs, ], ncol = 2)]
       }
+
+      # Accumulate local effects
       fJ.true <- apply(t(apply(Delta.true, 1, cumsum)), 2, cumsum)
       fJ.true <- rbind(rep(0, K2), fJ.true)
       fJ.true <- cbind(rep(0, K1 + 1), fJ.true)
+
+      # Center ALE
       Delta.true <- fJ.true[2:(K1 + 1), ] - fJ.true[1:K1, ]
       b.Delta.true <- b * (Delta.true[, 1:K2] + Delta.true[, 2:(K2 + 1)]) / 2
       Delta.Ave.true <- apply(b.Delta.true, 1, sum) / b1
@@ -211,17 +203,80 @@ mcmc_ale <- function(X, model, pred_fun, J, K = 40,
       Delta.Ave.true <- apply(b.Delta.true, 2, sum) / b2
       fJ2.true <- c(0, cumsum(Delta.Ave.true))
       fJ.true <- fJ.true - outer(fJ1.true, rep(1, K2 + 1)) - outer(rep(1, K1 + 1), fJ2.true)
-      fJ0.true <- sum(b * (fJ.true[1:K1, 1:K2] +
-                           fJ.true[1:K1, 2:(K2 + 1)] +
-                           fJ.true[2:(K1 + 1), 1:K2] +
-                           fJ.true[2:(K1 + 1), 2:(K2 + 1)]) / 4) / sum(b)
+
+      if (center == 'avg_pred') {
+        fJ0.true <- sum(b * (fJ.true[1:K1, 1:K2] +
+                             fJ.true[1:K1, 2:(K2 + 1)] +
+                             fJ.true[2:(K1 + 1), 1:K2] +
+                             fJ.true[2:(K1 + 1), 2:(K2 + 1)]) / 4) / sum(b)
+      }
+      else if (center == 'median') {
+        fJ0.true <- (fJ.true[M1,M2] + fJ.true[M1,M2+1] + fJ.true[M1+1,M2] + fJ.true[M1+1,M2+1]) / 4
+      }
+
       fJ.true <- fJ.true - fJ0.true
 
+      # If main effects requested, add back the marginally centered main effects
+      if (include_main_effects) {
+
+        # Get true ALE main effect functions
+        fJ1.true <- get_ale_true_1D(X, f_true, J[1], K, center)
+        fJ2.true <- get_ale_true_1D(X, f_true, J[2], K, center)
+
+        # Add true ALE main effects back to true ALE second-order effects
+        fJ.true <- fJ.true + outer(fJ1.true, rep(1, K2 + 1)) + outer(rep(1, K1 + 1), fJ2.true)
+      }
+
     } else fJ.true <- NULL
+
+
+    # Format output
+    # x <- list(z1, z2)
+    # K <- c(K1, K2)
+
+    fJ.array <- array(unlist(fJ), dim = c(dim(fJ[[1]]), length(fJ)))
+    fJ.mean  <- apply(fJ.array, c(1, 2), mean)
+    fJ.lower <- apply(fJ.array, c(1, 2), \(x) stats::quantile(x, CrI[1]))
+    fJ.upper <- apply(fJ.array, c(1, 2), \(x) stats::quantile(x, CrI[2]))
+
+
+    # Return as nice data frame
+    # Lower and upper bounds for plotting
+    #   - Plotting coordinates: ((z1 - w1, z1 + w2, z2 - h1, z2 + h1))
+    w1 <- c(diff(z1)[1], diff(z1)) / 2
+    w2 <- c(rev(abs(diff(rev(z1)))), rev(abs(diff(z1)))[1]) / 2
+    h1 <- c(diff(z2)[1], diff(z2)) / 2
+    h2 <- c(rev(abs(diff(rev(z2)))), rev(abs(diff(z2)))[1]) / 2
+
+    out <- data.frame(matrix(nrow = length(z1) * length(z2), ncol = 14))
+    colnames(out) <- c('k1','k2','var1','var2','x1','x2',
+                       'est','lcl','ucl','truth',
+                       'w1','w2','h1','h2')
+    index <- 1
+    for (i in 1:length(z1)) {
+      for (j in 1:length(z2)) {
+        out$k1[index] <- i
+        out$k2[index] <- j
+        out$x1[index] <- z1[i]
+        out$x2[index] <- z2[j]
+        out$est[index] <- fJ.mean[i,j]
+        out$lcl[index] <- fJ.lower[i,j]
+        out$ucl[index] <- fJ.upper[i,j]
+        if (!is.null(fJ.true)) out$truth[index] <- fJ.true[i,j]
+        out$w1[index] <- w1[i]
+        out$w2[index] <- w2[i]
+        out$h1[index] <- h1[j]
+        out$h2[index] <- h2[j]
+        index <- index + 1
+      }
+    }
+    out$var1 <- colnames(X)[J[1]]
+    out$var2 <- colnames(X)[J[2]]
+
+    return(out)
 
   } else{
     print("error:  J must be a vector of length one or two")
   }
 
-  return(list(K = K, x = x, est = fJ.mean, lcl = fJ.lower, ucl = fJ.upper, true = fJ.true))
 }
