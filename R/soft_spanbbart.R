@@ -90,7 +90,9 @@ soft_spanbbart <- function(x1, x2, y,
                var_counts = matrix(0, nrow = K, ncol = ncol(x2),
                                    dimnames = list(NULL, colnames(x2))),
                logmean = rep.int(NA_real_, K),
-               sigma = rep.int(NA_real_, K)
+               sigma = rep.int(NA_real_, K),
+
+               excess = numeric(K)
   )
 
   # If light storage is not selected, then return linear and BART predictors
@@ -99,6 +101,9 @@ soft_spanbbart <- function(x1, x2, y,
     post$eta <- matrix(NA_real_, K, N)
     post$G <- matrix(NA_real_, K, N)
   }
+
+  # Allocate running storage for WAIC calculation
+  ll <- ll2 <- ell <- numeric(N)
 
 
   # MCMC
@@ -188,10 +193,26 @@ soft_spanbbart <- function(x1, x2, y,
       post$tau2[Kk]         <- tau2
       post$var_counts[Kk,]  <- forest$get_counts()[,1]
       post$logmean[Kk]      <- log(xi) + post$alpha[Kk]
+
+      # WAIC
+      ll_curr <- dnbinom(y, size = xi, prob = q, log = TRUE)
+      ll <- ll + ll_curr
+      ll2 <- ll2 + ll_curr^2
+      ell <- ell + exp(ll_curr)
+
+      # Excess burden
+      post$excess[Kk] <- sum(xi * (exp(eta) - exp(offset + fixeff + ranef + as.numeric(forest$do_predict(x2 * 0)))))
+
     }
 
     pb$tick()
   }
+
+  pWAIC <- sum(ll2 / K - (ll / K)^2)
+  lppd <- sum(log(ell / K))
+  post$pWAIC <- pWAIC
+  post$lppd <- lppd
+  post$WAIC <- -2*lppd +2*pWAIC
 
   post$bart <- forest
 
