@@ -91,6 +91,7 @@ soft_spanbbart <- function(x1, x2, y,
                                    dimnames = list(NULL, colnames(x2))),
                logmean = rep.int(NA_real_, K),
                sigma = rep.int(NA_real_, K),
+               loglik = numeric(K),
 
                excess = numeric(K)
   )
@@ -199,6 +200,8 @@ soft_spanbbart <- function(x1, x2, y,
       ll <- ll + ll_curr
       ll2 <- ll2 + ll_curr^2
       ell <- ell + exp(ll_curr)
+
+      post$loglik[k] <- sum(ll_curr)
 
       # Excess burden
       post$excess[Kk] <- sum(xi * (exp(eta) - exp(offset + fixeff + ranef + as.numeric(forest$do_predict(x2 * 0)))))
