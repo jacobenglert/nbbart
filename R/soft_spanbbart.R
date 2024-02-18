@@ -196,7 +196,7 @@ soft_spanbbart <- function(x1, x2, y,
       post$logmean[Kk]      <- log(xi) + post$alpha[Kk]
 
       # WAIC
-      ll_curr <- dnbinom(y, size = xi, prob = q, log = TRUE)
+      ll_curr <- stats::dnbinom(y, size = xi, prob = q, log = TRUE)
       ll <- ll + ll_curr
       ll2 <- ll2 + ll_curr^2
       ell <- ell + exp(ll_curr)
